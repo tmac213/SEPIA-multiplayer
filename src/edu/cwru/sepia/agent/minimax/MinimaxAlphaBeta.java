@@ -82,13 +82,13 @@ public class MinimaxAlphaBeta extends Agent {
 
         GameStateChild ret = null;
 
-        if (depth % 2 == 0) {
+        if (depth % 2 != 0) {
             double v = Double.NEGATIVE_INFINITY;
             for (GameStateChild child : node.state.getChildren()) {
-                double childUtility = child.state.getUtility();
+                double childUtility = alphaBetaSearch(child, depth - 1, alpha, beta).state.getUtility();
                 if (childUtility > v) {
                     v = childUtility;
-                    ret = alphaBetaSearch(child, depth - 1, alpha, beta);
+                    ret = child;
                 }
                 alpha = Math.max(v, alpha);
                 if (beta <= alpha) {
@@ -98,10 +98,10 @@ public class MinimaxAlphaBeta extends Agent {
         } else {
             double v = Double.POSITIVE_INFINITY;
             for (GameStateChild child : node.state.getChildren()) {
-                double childUtility = child.state.getUtility();
+                double childUtility = alphaBetaSearch(child, depth - 1, alpha, beta).state.getUtility();
                 if (childUtility < v) {
                     v = childUtility;
-                    ret = alphaBetaSearch(child, depth - 1, alpha, beta);
+                    ret = child;
                 }
                 beta = Math.min(v, beta);
                 if (beta <= alpha) {
