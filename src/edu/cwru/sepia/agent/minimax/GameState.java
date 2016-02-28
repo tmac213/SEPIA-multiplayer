@@ -27,10 +27,10 @@ public class GameState {
     private static final int OBSERVER_ID = -999;
 
     private static final int WEIGHT_FOOTMAN_HP = 1;
-    private static final int WEIGHT_ARCHER_HP = -10;
+    private static final int WEIGHT_ARCHER_HP = -5;
     private static final int WEIGHT_FOOTMAN_ALIVE = 10;
-    private static final int WEIGHT_ARCHER_ALIVE = -100;
-    private static final int WEIGHT_FOOTMAN_ARCHER_DISTANCE = -1;
+    private static final int WEIGHT_ARCHER_ALIVE = -20;
+    private static final int WEIGHT_FOOTMAN_ARCHER_DISTANCE = -1000;
 
     private static final Direction[] VALID_DIRECTIONS = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
 
@@ -155,8 +155,6 @@ public class GameState {
      */
     public double getUtility() {
 
-
-
         int footmenHP = footmanLocations.keySet().stream()
                 .mapToInt(id -> state.getUnit(id).getHP())
                 .sum();
@@ -175,7 +173,7 @@ public class GameState {
 
         double averageFootmanToArcherDistance = footmanLocations.keySet().stream()
                 .mapToDouble(this::nearestArcherDistance)
-                .sum() / footmenAlive > 0 ? footmenAlive : 1;
+                .sum() / (footmenAlive > 0 ? footmenAlive : 1);
 
         return WEIGHT_FOOTMAN_HP * footmenHP +
                 WEIGHT_ARCHER_HP * archersHP +
