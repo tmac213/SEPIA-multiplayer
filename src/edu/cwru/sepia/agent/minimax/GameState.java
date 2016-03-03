@@ -27,17 +27,25 @@ public class GameState {
     private static final int OBSERVER_ID = -999;
 
     private static final int WEIGHT_FOOTMAN_HP = 1;
-    private static final int WEIGHT_ARCHER_HP = -5;
+    private static final int WEIGHT_ARCHER_HP = -2;
     private static final int WEIGHT_FOOTMAN_ALIVE = 10;
     private static final int WEIGHT_ARCHER_ALIVE = -20;
-    private static final int WEIGHT_FOOTMAN_ARCHER_DISTANCE = -1000;
+//    int WEIGHT_FOOTMAN_HP = 0;
+//    int WEIGHT_ARCHER_HP = 0;
+//    int WEIGHT_FOOTMAN_ALIVE = 0;
+//    int WEIGHT_ARCHER_ALIVE = 0;
+    private static final int WEIGHT_FOOTMAN_ARCHER_DISTANCE = -5;
 
     private static final Direction[] VALID_DIRECTIONS = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
 
-    State.StateView state;
-    private Map<Integer, Pair<Integer, Integer>> footmanLocations = new HashMap<>();
-    private Map<Integer, Pair<Integer, Integer>> archerLocations = new HashMap<>();
-    private Set<Pair<Integer, Integer>> resourceLocations = new HashSet<>();
+    private Map<Integer, GameUnit> units;
+    private Set<GameUnit> footmen;
+    private Set<GameUnit> archers;
+    private Map<Integer, Pair<Integer, Integer>> footmanLocations;
+    private Map<Integer, Pair<Integer, Integer>> archerLocations;
+    private Set<Pair<Integer, Integer>> resourceLocations;
+    private int xExtent;
+    private int yExtent;
     private int depth;
 
     /**
@@ -62,40 +70,52 @@ public class GameState {
      * @param state Current state of the episode
      */
     public GameState(State.StateView state) {
-        this.state = state;
+        try {
+            State s = state.getStateCreator().createState();
+            this.initialize(s);
+        } catch (IOException e) {
+            System.err.println("could not create state");
+            e.printStackTrace();
+            System.exit(1);
+        }
 
-        buildLocationMaps(state);
-
-        resourceLocations.addAll(state.getAllResourceNodes().stream()
-                .map(resource -> new Pair<>(resource.getXPosition(), resource.getYPosition()))
-                .collect(Collectors.toList()));
-
+        this.xExtent = state.getXExtent();
+        this.yExtent = state.getYExtent();
         this.depth = state.getTurnNumber();
     }
 
     public GameState(GameState parent, Map<Integer, Action> actionsTaken) {
-        try {
-            this.state = resultingState(parent.state.getStateCreator().createState(), actionsTaken);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
 
-        buildLocationMaps(this.state);
+        this.initialize(parent);
+        this.applyActions(actionsTaken);
 
-        this.resourceLocations = parent.resourceLocations;
+        this.xExtent = parent.xExtent;
+        this.yExtent = parent.yExtent;
         this.depth = parent.depth + 1;
     }
 
-    private void buildLocationMaps(State.StateView state) {
-        // add units to respective lists
-        for (Unit.UnitView unit : state.getAllUnits()) {
-            switch (unit.getTemplateView().getName()) {
+    private void initialize(State state) {
+
+        this.units = new HashMap<>();
+        this.footmen = new HashSet<>();
+        this.archers = new HashSet<>();
+        this.footmanLocations = new HashMap<>();
+        this.archerLocations = new HashMap<>();
+
+        for (Unit unit : state.getUnits().values()) {
+            switch (unit.getTemplate().getName()) {
                 case "Footman":
-                    this.footmanLocations.put(unit.getID(), new Pair<>(unit.getXPosition(), unit.getYPosition()));
+                    GameUnit newFootman = new GameUnit(unit);
+                    this.units.put(newFootman.id, newFootman);
+                    this.footmen.add(newFootman);
+                    this.footmanLocations.put(newFootman.id, newFootman.location);
                     System.out.print("added footman ");
                     break;
                 case "Archer":
-                    this.archerLocations.put(unit.getID(), new Pair<>(unit.getXPosition(), unit.getYPosition()));
+                    GameUnit newArcher = new GameUnit(unit);
+                    this.units.put(newArcher.id, newArcher);
+                    this.archers.add(newArcher);
+                    this.archerLocations.put(newArcher.id, newArcher.location);
                     System.out.print("added archer ");
                     break;
                 default:
@@ -104,35 +124,89 @@ public class GameState {
             }
             System.out.println(unit.toString());
         }
+
+        this.resourceLocations = state.getResources().stream()
+                .map(resource -> new Pair<>(resource.getxPosition(), resource.getyPosition()))
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
-    private State.StateView resultingState(State state, Map<Integer, Action> actionsTaken) {
+    private void initialize(GameState parent) {
+
+        this.footmen = new HashSet<>();
+        this.archers = new HashSet<>();
+
+        this.units = parent.units.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> new GameUnit(e.getValue())));
+
+        for (Map.Entry<Integer, GameUnit> entry : this.units.entrySet()) {
+            if (entry.getValue().name.equals("Footman")) {
+                this.footmen.add(entry.getValue());
+            } else {
+                this.archers.add(entry.getValue());
+            }
+        }
+
+        this.footmanLocations = this.footmen.stream()
+                .collect(Collectors.toMap(
+                        footman -> footman.id,
+                        footman -> footman.location)
+                );
+        this.archerLocations = this.archers.stream()
+                .collect(Collectors.toMap(
+                        archer -> archer.id,
+                        archer -> archer.location)
+                );
+
+        this.resourceLocations = parent.resourceLocations;
+    }
+
+    private void applyActions(Map<Integer, Action> actionsTaken) {
 
         for (Map.Entry<Integer, Action> actionEntry : actionsTaken.entrySet()) {
             switch (actionEntry.getValue().getType()) {
                 case PRIMITIVEMOVE:
-                    state.moveUnit(state.getUnit(actionEntry.getKey()), ((DirectedAction) actionEntry.getValue()).getDirection());
+                    performMove(units.get(actionEntry.getKey()), ((DirectedAction) actionEntry.getValue()).getDirection());
                     break;
                 case PRIMITIVEATTACK:
                     TargetedAction attackAction = (TargetedAction) actionEntry.getValue();
-                    Unit attacker = state.getUnit(attackAction.getUnitId());
-                    Unit victim = state.getUnit(attackAction.getTargetId());
-                    int temp;
-                    victim.setHP((temp = victim.getCurrentHealth() - attacker.getTemplate().getBasicAttack()) > 0 ? temp : 0);
-                    if (victim.getCurrentHealth() == 0) {
-                        state.removeUnit(victim.ID);
-                    }
+                    GameUnit attacker = units.get(attackAction.getUnitId());
+                    GameUnit victim = units.get(attackAction.getTargetId());
+                    performAttack(attacker, victim);
                     break;
                 default:
-                    System.err.println("unexpected action in resultingState()");
+                    System.err.println("unexpected action in applyActions()");
             }
         }
-
-        return state.getView(OBSERVER_ID);
     }
 
-    public boolean isTerminal() {
-        return footmanLocations.isEmpty() || archerLocations.isEmpty();
+    private void performMove(GameUnit unit, Direction direction) {
+        unit.location.a = unit.location.a + direction.xComponent();
+        unit.location.b = unit.location.b + direction.yComponent();
+/*
+        if (footmanLocations.containsKey(unit.id)) {
+            footmanLocations.put(unit.id, unit.location);
+        } else if (archerLocations.containsKey(unit.id)) {
+            archerLocations.put(unit.id, unit.location);
+        }*/
+    }
+
+    private void performAttack(GameUnit attacker, GameUnit victim) {
+        if (victim == null) {
+            return;  // the previous footman's attack already killed the archer
+        }
+        int temp;
+        victim.hp = (temp = victim.hp - attacker.attackDamage) > 0 ? temp : 0;
+        if (victim.hp == 0) {
+            removeUnitFromGameState(victim);
+        }
+    }
+
+    private void removeUnitFromGameState(GameUnit unit) {
+        this.units.remove(unit.id);
+        this.footmen.remove(unit);
+        this.archers.remove(unit);
+        this.footmanLocations.remove(unit.id);
+        this.archerLocations.remove(unit.id);
     }
 
     /**
@@ -155,25 +229,25 @@ public class GameState {
      */
     public double getUtility() {
 
-        int footmenHP = footmanLocations.keySet().stream()
-                .mapToInt(id -> state.getUnit(id).getHP())
+        int footmenHP = footmen.stream()
+                .mapToInt(u -> u.hp)
                 .sum();
 
-        int archersHP = archerLocations.keySet().stream()
-                .mapToInt(id -> state.getUnit(id).getHP())
+        int archersHP = archers.stream()
+                .mapToInt(u -> u.hp)
                 .sum();
 
-        int footmenAlive = footmanLocations.keySet().stream()
-                .mapToInt(id -> state.getUnit(id).getHP() > 0 ? 1 : 0)
+        int footmenAlive = footmen.stream()
+                .mapToInt(footman -> footman.hp > 0 ? 1 : 0)
                 .sum();
 
-        int archersAlive = archerLocations.keySet().stream()
-                .mapToInt(id -> state.getUnit(id).getHP() > 0 ? 1 : 0)
+        int archersAlive = archers.stream()
+                .mapToInt(archer -> archer.hp > 0 ? 1 : 0)
                 .sum();
 
-        double averageFootmanToArcherDistance = footmanLocations.keySet().stream()
+        double averageFootmanToArcherDistance = footmen.stream()
                 .mapToDouble(this::nearestArcherDistance)
-                .sum() / (footmenAlive > 0 ? footmenAlive : 1);
+                .sum() / ((footmenAlive > 0 && archersAlive > 0) ? footmenAlive : 1);
 
         return WEIGHT_FOOTMAN_HP * footmenHP +
                 WEIGHT_ARCHER_HP * archersHP +
@@ -182,17 +256,16 @@ public class GameState {
                 WEIGHT_FOOTMAN_ARCHER_DISTANCE * averageFootmanToArcherDistance;
     }
 
-    private double nearestArcherDistance(int id) {
-        Unit.UnitView unit = state.getUnit(id);
+    private double nearestArcherDistance(GameUnit footman) {
         double distance = 0;
 
-        if (unit.getHP() <= 0) {
+        if (footman.hp <= 0) {
             return distance;
         }
 
         for (Pair<Integer, Integer> archerLocation : archerLocations.values()) {
-            double temp = DistanceMetrics.euclideanDistance(unit.getXPosition(), unit.getYPosition(), archerLocation.a, archerLocation.b);
-            distance = temp > distance ? temp : distance;
+            double temp = DistanceMetrics.euclideanDistance(footman.xPosition(), footman.yPosition(), archerLocation.a, archerLocation.b);
+            distance = (distance == 0 || temp < distance) ? temp : distance;
         }
 
         return distance;
@@ -217,18 +290,37 @@ public class GameState {
     public List<GameStateChild> getChildren() {
         List<GameStateChild> ret = new LinkedList<>();
 
-        Map<Integer, List<Action>> validActions;
-
-        if (depth % 2 == 0) {
-            validActions = validActions(footmanLocations.keySet(), archerLocations.keySet());
-        } else {
-            validActions = validActions(archerLocations.keySet(), footmanLocations.keySet());
-        }
+        Map<Integer, List<Action>> validActions = validActions(footmanLocations.keySet(), archerLocations.keySet());
 
         ret.addAll(getActionCombinations(validActions).stream()
                 .filter(validActionMap -> !actionsConflict(validActionMap))
                 .map(actionCombination -> new GameStateChild(actionCombination, new GameState(this, actionCombination)))
                 .collect(Collectors.toList()));
+
+        return ret;
+    }
+
+    // return map from unit ID to its valid actions
+    private Map<Integer, List<Action>> validActions(Collection<Integer> unitIDs, Collection<Integer> enemyIDs) {
+        Map<Integer, List<Action>> ret = new HashMap<>();
+
+        for (int currentUnitID : unitIDs) {
+
+            List<Action> validActionsForCurrentUnit = new LinkedList<>();
+
+            for (Direction direction : VALID_DIRECTIONS) {
+                if (validMove(currentUnitID, direction)) {
+                    validActionsForCurrentUnit.add(Action.createPrimitiveMove(currentUnitID, direction));
+                }
+            }
+
+            validActionsForCurrentUnit.addAll(enemyIDs.stream()
+                    .filter(enemyID -> validAttack(currentUnitID, enemyID))
+                    .map(enemyID -> Action.createPrimitiveAttack(currentUnitID, enemyID))
+                    .collect(Collectors.toList()));
+
+            ret.put(currentUnitID, validActionsForCurrentUnit);
+        }
 
         return ret;
     }
@@ -261,30 +353,6 @@ public class GameState {
         return ret;
     }
 
-    // return map from unit ID to its valid actions
-    private Map<Integer, List<Action>> validActions(Collection<Integer> unitIDs, Collection<Integer> enemyIDs) {
-        Map<Integer, List<Action>> ret = new HashMap<>();
-
-        for (int currentUnitID : unitIDs) {
-            List<Action> validActionsForCurrentUnit = new LinkedList<>();
-
-            for (Direction direction : VALID_DIRECTIONS) {
-                if (validMove(currentUnitID, direction)) {
-                    validActionsForCurrentUnit.add(Action.createPrimitiveMove(currentUnitID, direction));
-                }
-            }
-
-            validActionsForCurrentUnit.addAll(enemyIDs.stream()
-                    .filter(enemyID -> validAttack(currentUnitID, enemyID))
-                    .map(enemyID -> Action.createPrimitiveAttack(currentUnitID, enemyID))
-                    .collect(Collectors.toList()));
-
-            ret.put(currentUnitID, validActionsForCurrentUnit);
-        }
-
-        return ret;
-    }
-
     private boolean actionsConflict(Map<Integer, Action> moves) {
         Set<Pair<Integer, Integer>> resultLocations = new HashSet<>();
 
@@ -299,16 +367,26 @@ public class GameState {
     }
 
     private Pair<Integer, Integer> resultingLocation(int id, DirectedAction action) {
-        return new Pair<>(state.getUnit(id).getXPosition() + action.getDirection().xComponent(),
-                state.getUnit(id).getYPosition() + action.getDirection().yComponent());
+        return new Pair<>(this.units.get(id).xPosition() + action.getDirection().xComponent(),
+                this.units.get(id).yPosition() + action.getDirection().yComponent());
     }
 
     private boolean validMove(int unitID, Direction direction) {
         Pair<Integer, Integer> newLocation = new Pair<>(
-                this.state.getUnit(unitID).getXPosition() + direction.xComponent(),
-                this.state.getUnit(unitID).getYPosition() + direction.yComponent());
+                this.units.get(unitID).xPosition() + direction.xComponent(),
+                this.units.get(unitID).yPosition() + direction.yComponent());
 
-        return !resourceLocations.contains(newLocation) && !this.state.isUnitAt(newLocation.a, newLocation.b);
+        return newLocation.a <= this.xExtent
+                && newLocation.a >= 0
+                && newLocation.b <= this.yExtent
+                && newLocation.b >= 0
+                && !resourceLocations.contains(newLocation)
+                && !isUnitAt(newLocation);
+    }
+
+    private boolean isUnitAt(Pair<Integer, Integer> location) {
+        return this.footmanLocations.containsValue(location)
+                || this.archerLocations.containsValue(location);
     }
 
     private boolean validAttack(int unitID, int enemyID) {
@@ -316,7 +394,7 @@ public class GameState {
     }
 
     private int movesBetween(int aID, int bID) {
-        return Math.abs(this.state.getUnit(aID).getXPosition() - this.state.getUnit(bID).getXPosition())
-                + Math.abs(this.state.getUnit(aID).getYPosition() - this.state.getUnit(bID).getYPosition());
+        return Math.abs(this.units.get(aID).xPosition() - this.units.get(bID).xPosition())
+                + Math.abs(this.units.get(aID).yPosition() - this.units.get(bID).yPosition());
     }
 }
