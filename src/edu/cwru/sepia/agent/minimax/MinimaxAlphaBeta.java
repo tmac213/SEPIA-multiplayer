@@ -7,6 +7,7 @@ import edu.cwru.sepia.environment.model.state.State;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +85,8 @@ public class MinimaxAlphaBeta extends Agent {
 
         if (depth % 2 != 0) {
             double v = Double.NEGATIVE_INFINITY;
-            for (GameStateChild child : node.state.getChildren()) {
+            Collection<GameStateChild> children = node.state.getChildren();
+            for (GameStateChild child : children) {
                 double childUtility = alphaBetaSearch(child, depth - 1, alpha, beta).state.getUtility();
                 if (childUtility > v) {
                     v = childUtility;
