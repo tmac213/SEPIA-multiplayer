@@ -128,7 +128,7 @@ public class MinimaxAlphaBeta extends Agent {
      *
      * Include a good comment about what your heuristics are and why you chose them.
      *
-     * @param children
+     * @param children The original list of children.
      * @return The list of children sorted by your heuristic.
      */
     public List<GameStateChild> orderChildrenWithHeuristics(List<GameStateChild> children) {
@@ -169,9 +169,4 @@ public class MinimaxAlphaBeta extends Agent {
 
         return ((g1Attacks - g2Attacks) * ATTACK_WEIGHT) + ((g1Souths - g2Souths) * SOUTH_WEIGHT);
     }
-
-    private int heuristicValue(GameStateChild node) {
-        return 0;
-    }
-
 }
