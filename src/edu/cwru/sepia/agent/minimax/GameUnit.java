@@ -13,12 +13,12 @@ public class GameUnit {
     int attackDamage;
     Pair<Integer, Integer> location;
 
-    GameUnit(Unit unit) {
-        this.name = unit.getTemplate().getName();
-        this.id = unit.ID;
-        this.hp = unit.getCurrentHealth();
-        this.attackDamage = unit.getTemplate().getBasicAttack();
-        this.location = new Pair<>(unit.getxPosition(), unit.getyPosition());
+    GameUnit(Unit.UnitView unit) {
+        this.name = unit.getTemplateView().getName();
+        this.id = unit.getID();
+        this.hp = unit.getHP();
+        this.attackDamage = unit.getTemplateView().getBasicAttack();
+        this.location = new Pair<>(unit.getXPosition(), unit.getYPosition());
     }
 
     GameUnit(GameUnit old) {
